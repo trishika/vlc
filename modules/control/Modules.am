@@ -5,6 +5,7 @@ SOURCES_ntservice = ntservice.c
 SOURCES_hotkeys = hotkeys.c
 SOURCES_lirc = lirc.c
 SOURCES_oldrc = rc.c
+SOURCES_cupnp = upnp.cpp
 if HAVE_DARWIN
 motion_extra = unimotion.c unimotion.h
 else
@@ -22,7 +23,8 @@ libvlc_LTLIBRARIES += \
 	libgestures_plugin.la \
 	libnetsync_plugin.la \
 	libhotkeys_plugin.la \
-	liboldrc_plugin.la
+	liboldrc_plugin.la \
+	libcupnp_plugin.la
 
 libdbus_plugin_la_SOURCES = \
 	dbus/dbus_introspect.h dbus/dbus_common.h \
