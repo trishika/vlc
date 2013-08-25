@@ -25,11 +25,17 @@
  * Preamble
  *****************************************************************************/
 
-#include <errno.h>
-#include <fcntl.h>
-
 #ifdef HAVE_CONFIG_H
 # include "config.h"
+#endif
+
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <inttypes.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
 #endif
 
 #include <vlc_common.h>
@@ -39,7 +45,6 @@
 #include <vlc_input.h>
 #include <vlc_aout.h>
 #include <vlc_vout.h>
-#include <vlc_vout_osd.h>
 #include <vlc_keys.h>
 
 #ifdef HAVE_POLL
@@ -68,6 +73,8 @@
 /* Service */
 #define SERVICE_TYPE "urn:schemas-upnp-org:service-1-0"
 
+#define MAX_VOLUME 2
+
 /*****************************************************************************
  * Module descriptor
  *****************************************************************************/
@@ -92,13 +99,6 @@ struct intf_sys_t
     vlc_thread_t thread;
     int          i_fd;
 };
-
-/*****************************************************************************
- * Local prototypes
- *****************************************************************************/
-static void *Run( void * );
-
-static void Process( intf_thread_t * );
 
 /*****************************************************************************
  * Callback
@@ -138,17 +138,13 @@ static int Open( vlc_object_t *p_this )
 
     vlc_mutex_init( &p_intf->p_sys->lock );
 
-    ret = UpnpInit( NULL, NULL);
+    ret = UpnpInit( NULL, 0);
     if( ret != UPNP_E_SUCCESS )
     {
         msg_Err(p_intf, "Initialization failed: %s", UpnpGetErrorMessage( ret ) );
         goto error;
     }
-/*
-    p_intf->upnp_controller = new Controller();
-    if( p_intf->upnp_controller == NULL )
-        goto error;
-*/
+
     ip_address = UpnpGetServerIpAddress();
     port = UpnpGetServerPort();
     msg_Info(p_intf, "UPnP Initialized ipaddress = %s port = %u", ip_address ? ip_address : "NULL", port);
@@ -196,14 +192,24 @@ static void Close( vlc_object_t *p_this )
     intf_thread_t *p_intf = (intf_thread_t *)p_this;
     intf_sys_t *p_sys = p_intf->p_sys;
 
-    /*vlc_cancel( p_sys->thread );
-    vlc_join( p_sys->thread, NULL );*/
-
-    /*delete p_sys->upnp_controller;*/
-
     /* Destroy structure */
     vlc_mutex_destroy(&p_sys->lock);
     free( p_sys );
+}
+
+/*****************************************************************************
+ * Utils
+ *****************************************************************************/
+
+void second2string(uint64_t seconds, char* time_c)
+{
+    uint64_t time_tot, time_h, time_m, time_s;
+
+    time_h = (uint64_t) seconds / 3600;
+    time_m = (uint64_t) ( seconds % 3600 ) / 60;
+    time_s = (uint64_t) ( seconds % 60 );
+
+    sprintf( time_c, "%02"PRIu64":""%02"PRIu64":""%02"PRIu64, time_h, time_m, time_s);
 }
 
 /*****************************************************************************
@@ -213,7 +219,7 @@ static void Close( vlc_object_t *p_this )
 static int Callback( Upnp_EventType event_type, void *p_event, void *p_user_data )
 {
     intf_thread_t *p_intf = (intf_thread_t *) p_user_data;
-//    vlc_mutex_locker locker( &p_intf->p_sys->lock );
+    vlc_mutex_lock(&p_intf->p_sys->lock);
 
     msg_Dbg( p_intf, "Callback event, type=%d", event_type );
 
@@ -221,25 +227,22 @@ static int Callback( Upnp_EventType event_type, void *p_event, void *p_user_data
     {
         case UPNP_EVENT_SUBSCRIPTION_REQUEST:
         {
-            Upnp_Subscription_Request* event = (struct Upnp_Subscription_Request *) p_event;
+            struct Upnp_Subscription_Request* event = (struct Upnp_Subscription_Request *) p_event;
             msg_Dbg( p_intf, "Received subscription request");
-
             HandleSubscriptionRequest(event, p_intf);
         }
             break;
         case UPNP_CONTROL_GET_VAR_REQUEST:
         {
-            Upnp_State_Var_Request* event = (struct Upnp_State_Var_Request *) p_event;
+            struct Upnp_State_Var_Request* event = (struct Upnp_State_Var_Request *) p_event;
             msg_Dbg( p_intf, "Received var request: %s", event->StateVarName);
-
             HandleGetVarRequest(event, p_intf);
         }
             break;
         case UPNP_CONTROL_ACTION_REQUEST:
         {
-            Upnp_Action_Request* event = (struct Upnp_Action_Request *) p_event;
+            struct Upnp_Action_Request* event = (struct Upnp_Action_Request *) p_event;
             msg_Dbg( p_intf, "Received action request: %s", event->ActionName);
-
             HandleActionRequest(event, p_intf);
         }
             break;
@@ -247,24 +250,27 @@ static int Callback( Upnp_EventType event_type, void *p_event, void *p_user_data
             break;
     }
 
+    vlc_mutex_unlock(&p_intf->p_sys->lock);
     return UPNP_E_SUCCESS;
 }
 
 int HandleSubscriptionRequest(struct Upnp_Subscription_Request *event, intf_thread_t *p_intf)
 {
-
+    return UPNP_E_SUCCESS;
 }
 
 int HandleGetVarRequest(struct Upnp_State_Var_Request *event, intf_thread_t *p_intf)
 {
-    intf_sys_t *p_sys = p_intf->p_sys;
-    playlist_t *p_playlist = pl_Get( p_intf );
+    // intf_sys_t *p_sys = p_intf->p_sys;
+    // playlist_t *p_playlist = pl_Get( p_intf );
 
     event->ErrCode = UPNP_E_SUCCESS;
 
     if(!strcmp(event->StateVarName,"GetTransportInfo")){
 
-    }else{
+    }
+    else
+    {
         event->ErrCode = UPNP_E_INTERNAL_ERROR;
     }
 
@@ -308,35 +314,54 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
     }
     else if(!strcmp(event->ActionName, "Seek"))
     {
+        msg_Info(p_intf, "%s", ixmlPrintDocument(event->ActionRequest));
 
+        if( p_input != NULL )
+        {
+            const char* time_c;
+            IXML_Node* node;
+
+            node = ixmlNode_getFirstChild(ixmlNodeList_item(ixmlDocument_getElementsByTagName(event->ActionRequest, "Target"),0));
+            time_c = ixmlNode_getNodeValue(node);
+            mtime_t t = ((int64_t)atoi( time_c )) * CLOCK_FREQ;
+            var_SetFloat( p_input, "position", t );
+        }
     }
     else if(!strcmp(event->ActionName,"GetVolume"))
     {
         char value[MAX_VAL_LEN];
-        sprintf(value, "%f", playlist_VolumeGet( p_playlist ));
+
+        sprintf(value, "%d", (int)((playlist_VolumeGet( p_playlist )/MAX_VOLUME)*100));
         msg_Info(p_intf, "Current volume is %s", value);
         UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "CurrentVolume", value);
         //sprintf(event->ActionResult, "%f", playlist_VolumeGet( p_playlist ));
     }
     else if(!strcmp(event->ActionName, "SetVolume"))
     {
-        const char* volume_c =
-            ixmlNode_getNodeValue(
-                ixmlNode_getFirstChild(
-                    ixmlNodeList_item(ixmlDocument_getElementsByTagName(event->ActionRequest, "Volume"),0)));
-        int volume = atoi(volume_c);
-        float vol;
-        msg_Info(p_intf, "Set volume to %s", volume_c);
-        if( playlist_VolumeSet( p_playlist, volume / (float)AOUT_VOLUME_DEFAULT ) != 0 )
+        const char* volume_c;
+        int volume;
+        IXML_Node* node;
+
+        //msg_Info(p_intf, "%s", ixmlPrintDocument(event->ActionRequest));
+
+        node = ixmlNode_getFirstChild(ixmlNodeList_item(ixmlDocument_getElementsByTagName(event->ActionRequest, "DesiredVolume"),0));
+        volume_c = ixmlNode_getNodeValue(node);
+
+        if(volume_c)
         {
-            msg_Err(p_intf, "Enable to set volume !!!");
-            ret = UPNP_E_INTERNAL_ERROR;
+            msg_Info(p_intf, "Set volume to %s", volume_c);
+            volume = atoi(volume_c);
+            if( playlist_VolumeSet( p_playlist, ((float)volume*MAX_VOLUME)/100) != 0 )
+            {
+                msg_Err(p_intf, "Enable to set volume !!!");
+                ret = UPNP_E_INTERNAL_ERROR;
+            }
         }
         //DisplayVolume( p_intf, p_vout, volume / (float)AOUT_VOLUME_DEFAULT );
     }
     else if(!strcmp(event->ActionName, "SetMute"))
     {
-        playlist_MuteToggle( p_playlist ) == 0;
+        playlist_MuteToggle( p_playlist );
         /*if( playlist_MuteToggle( p_playlist ) == 0 )
         {
             float vol = playlist_VolumeGet( p_playlist );
@@ -351,11 +376,37 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
     }
     else if(!strcmp(event->ActionName,"GetMediaInfo"))
     {
+        msg_Info(p_intf, "%s", ixmlPrintDocument(event->ActionRequest));
+
 
     }
     else if(!strcmp(event->ActionName,"GetPositionInfo"))
     {
+        msg_Info(p_intf, "%s", ixmlPrintDocument(event->ActionRequest));
 
+        if( p_input != NULL )
+        {
+            vlc_value_t time;
+            char time_c[8];
+            uint64_t time_tot, time_h, time_m, time_s;
+            var_Get( p_input, "length", &time );
+            second2string(time.i_time / 1000000,  time_c);
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "TrackDuration", time_c);
+
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "Track", input_GetItem(p_input)->psz_name);
+
+            var_Get( p_input, "time", &time );
+            second2string(time.i_time / 1000000,  time_c);
+            msg_Info(p_intf, "%"PRIu64" -> %s", time_tot, time_c);
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "RelTime", time_c);
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "AbsTime", time_c);
+
+            msg_Info(p_intf, "%s", ixmlPrintDocument(event->ActionResult));
+        }
+    }
+    else if(!strcmp(event->ActionName,"SetAVTransportURI"))
+    {
+        msg_Info(p_intf, "%s", ixmlPrintDocument(event->ActionRequest));
     }
     else
     {
@@ -363,16 +414,4 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
     }
 
     return ret;
-}
-
-/*****************************************************************************
- * Run: main loop
- *****************************************************************************/
-static void *Run( void *data )
-{
-    return NULL;
-}
-
-static void Process( intf_thread_t *p_intf )
-{
 }

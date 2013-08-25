@@ -5,7 +5,7 @@ SOURCES_ntservice = ntservice.c
 SOURCES_hotkeys = hotkeys.c
 SOURCES_lirc = lirc.c
 SOURCES_oldrc = rc.c
-SOURCES_cupnp = upnp.cpp
+SOURCES_cupnp = upnp.c
 if HAVE_DARWIN
 motion_extra = unimotion.c unimotion.h
 else
