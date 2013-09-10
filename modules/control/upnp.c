@@ -203,7 +203,7 @@ static void Close( vlc_object_t *p_this )
 
 void second2string(uint64_t seconds, char* time_c)
 {
-    uint64_t time_tot, time_h, time_m, time_s;
+    uint64_t time_h, time_m, time_s;
 
     time_h = (uint64_t) seconds / 3600;
     time_m = (uint64_t) ( seconds % 3600 ) / 60;
@@ -378,6 +378,28 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
     {
         msg_Info(p_intf, "%s", ixmlPrintDocument(event->ActionRequest));
 
+        if( p_input != NULL )
+        {
+            vlc_value_t time;
+            char time_c[8];
+            uint64_t time_tot, time_h, time_m, time_s;
+
+            input_item_t* p_item = input_GetItem( p_input );
+
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "CurrentURI",         input_item_GetURI(p_item));
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "CurrentURIMetaData", input_item_GetName(p_item));
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "NextURI",            "");
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "NextURIMetaData",    "");
+
+            var_Get( p_input, "length", &time );
+            second2string(time.i_time / 1000000,  time_c);
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "MediaDuration", time_c);
+
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "NrTracks", "0");
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "PlayMedium", "");
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "RecordMedium", "");
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "WriteStatus", "");
+        }
 
     }
     else if(!strcmp(event->ActionName,"GetPositionInfo"))
@@ -389,17 +411,25 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
             vlc_value_t time;
             char time_c[8];
             uint64_t time_tot, time_h, time_m, time_s;
+
+            input_item_t* p_item = input_GetItem( p_input );
+
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "Track",         ((input_item_GetTrackNum(p_item)!=NULL) ? input_item_GetTrackNum(p_item) : "0"));
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "TrackURI",      input_item_GetURI(p_item));
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "TrackMetaData", input_item_GetName(p_item));
+
             var_Get( p_input, "length", &time );
             second2string(time.i_time / 1000000,  time_c);
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "TrackDuration", time_c);
-
-            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "Track", input_GetItem(p_input)->psz_name);
 
             var_Get( p_input, "time", &time );
             second2string(time.i_time / 1000000,  time_c);
             msg_Info(p_intf, "%"PRIu64" -> %s", time_tot, time_c);
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "RelTime", time_c);
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "AbsTime", time_c);
+
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "RelCount", "0");
+            UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "AbsCount", "0");
 
             msg_Info(p_intf, "%s", ixmlPrintDocument(event->ActionResult));
         }
