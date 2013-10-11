@@ -212,6 +212,19 @@ void second2string(uint64_t seconds, char* time_c)
     sprintf( time_c, "%02"PRIu64":""%02"PRIu64":""%02"PRIu64, time_h, time_m, time_s);
 }
 
+void string2second(char* time_c, uint64_t* seconds)
+{
+    char *saveptr, *token;
+    int coef = 3600;
+    *seconds = 0;
+    while(token = strtok_r(time_c, ":", &saveptr))
+    {
+       *seconds += atoi(token)*coef;
+       coef /= 60;
+       time_c = NULL;
+    }
+}
+
 /*****************************************************************************
  * Handlers
  *****************************************************************************/
@@ -266,7 +279,10 @@ int HandleGetVarRequest(struct Upnp_State_Var_Request *event, intf_thread_t *p_i
 
     event->ErrCode = UPNP_E_SUCCESS;
 
-    if(!strcmp(event->StateVarName,"GetTransportInfo")){
+    msg_Info(p_intf, "%s : %s", __FUNCTION__, event->StateVarName);
+
+    if(!strcmp(event->StateVarName,"GetTransportInfo"))
+    {
 
     }
     else
@@ -319,12 +335,30 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
         if( p_input != NULL )
         {
             const char* time_c;
-            IXML_Node* node;
+            uint64_t seconds = 0;
+            IXML_Node* node = NULL;
+            IXML_NodeList* list = NULL;
 
-            node = ixmlNode_getFirstChild(ixmlNodeList_item(ixmlDocument_getElementsByTagName(event->ActionRequest, "Target"),0));
-            time_c = ixmlNode_getNodeValue(node);
-            mtime_t t = ((int64_t)atoi( time_c )) * CLOCK_FREQ;
-            var_SetFloat( p_input, "position", t );
+            if(list = ixmlDocument_getElementsByTagName(event->ActionRequest, "Target"))
+            {
+                if(node = ixmlNode_getFirstChild(ixmlNodeList_item(list,0)))
+                {
+                    time_c = ixmlNode_getNodeValue(node);
+                    msg_Info(p_intf, "Seek : seek to position %s", time_c);
+                    string2second(time_c, &seconds);
+                    var_SetTime( p_input, "time", seconds * CLOCK_FREQ );
+                }
+                else
+                {
+                    msg_Err(p_intf, "Seek : error while parsing request");
+                    ret = UPNP_E_INTERNAL_ERROR;
+                }
+            }
+            else
+            {
+                msg_Err(p_intf, "Seek : error while parsing request");
+                ret = UPNP_E_INTERNAL_ERROR;
+            }
         }
     }
     else if(!strcmp(event->ActionName,"GetVolume"))
@@ -392,7 +426,7 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "NextURIMetaData",    "");
 
             var_Get( p_input, "length", &time );
-            second2string(time.i_time / 1000000,  time_c);
+            second2string(time.i_time / CLOCK_FREQ,  time_c);
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "MediaDuration", time_c);
 
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "NrTracks", "0");
@@ -400,7 +434,6 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "RecordMedium", "");
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "WriteStatus", "");
         }
-
     }
     else if(!strcmp(event->ActionName,"GetPositionInfo"))
     {
@@ -419,11 +452,11 @@ int HandleActionRequest(struct Upnp_Action_Request *event, intf_thread_t *p_intf
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "TrackMetaData", input_item_GetName(p_item));
 
             var_Get( p_input, "length", &time );
-            second2string(time.i_time / 1000000,  time_c);
+            second2string(time.i_time / CLOCK_FREQ,  time_c);
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "TrackDuration", time_c);
 
             var_Get( p_input, "time", &time );
-            second2string(time.i_time / 1000000,  time_c);
+            second2string(time.i_time / CLOCK_FREQ,  time_c);
             msg_Info(p_intf, "%"PRIu64" -> %s", time_tot, time_c);
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "RelTime", time_c);
             UpnpAddToActionResponse(&event->ActionResult, event->ActionName, SERVICE_TYPE, "AbsTime", time_c);
